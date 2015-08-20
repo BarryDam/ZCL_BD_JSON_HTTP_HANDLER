@@ -1,0 +1,74 @@
+CLASS zcl_bd_ui5_http_handler DEFINITION INHERITING FROM zcl_bd_json_http_handler
+  PUBLIC
+  CREATE PUBLIC .
+
+  PROTECTED SECTION.
+    METHODS create_data REDEFINITION.
+
+  PRIVATE SECTION.
+    METHODS foo.
+    METHODS test.
+ENDCLASS.
+
+
+
+CLASS ZCL_BD_UI5_HTTP_HANDLER IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_BD_UI5_HTTP_HANDLER->CREATE_DATA
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD create_data.
+    CASE iv_action.
+      WHEN 'foo'.
+        me->foo( ).
+      WHEN 'test'.
+        me->test( ).
+      WHEN OTHERS.
+        me->set_error( iv_message = 'action not found' ).
+    ENDCASE.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_BD_UI5_HTTP_HANDLER->FOO
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD foo.
+    DATA: BEGIN OF lv_foo,
+            foo TYPE i VALUE 1,
+          END OF lv_foo.
+
+    me->set_data( iv_struct = lv_foo ).
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Private Method ZCL_BD_UI5_HTTP_HANDLER->TEST
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD test.
+
+    TYPES: BEGIN OF ls_test,
+             value TYPE string,
+             occ   TYPE i,
+           END OF ls_test.
+
+    DATA: it_test TYPE STANDARD TABLE OF ls_test,
+          lv_test TYPE ls_test.
+
+
+
+    lv_test-value = 'test'.
+    lv_test-occ = 1.
+    APPEND lv_test TO it_test.
+
+    lv_test-value = 'tesadfst'.
+    lv_test-occ = 2.
+    APPEND lv_test TO it_test.
+
+    me->set_data( iv_struct = it_test ).
+  ENDMETHOD.
+ENDCLASS.

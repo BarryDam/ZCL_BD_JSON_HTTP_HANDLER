@@ -1,0 +1,212 @@
+CLASS zcl_bd_json_http_handler DEFINITION
+  PUBLIC
+  ABSTRACT
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    INTERFACES if_http_extension .
+
+    METHODS get
+      IMPORTING
+        iv_key              TYPE string
+        iv_required         TYPE abap_bool DEFAULT abap_false
+        iv_required_message TYPE string  DEFAULT ''
+      RETURNING
+        VALUE(r)            TYPE string
+      RAISING
+        zcx_bd_not_found .
+    METHODS get_action
+      RETURNING
+        VALUE(r) TYPE string
+      RAISING
+        zcx_bd_not_found .
+    METHODS get_client
+      RETURNING
+        VALUE(r) TYPE i
+      RAISING
+        zcx_bd_not_found .
+    METHODS respond .
+    METHODS set_data
+      IMPORTING
+        iv_struct  TYPE any
+        iv_success TYPE abap_bool DEFAULT abap_true.
+    METHODS set_error
+      IMPORTING
+        iv_message TYPE string
+        iv_code    TYPE i DEFAULT 404 .
+
+  PROTECTED SECTION.
+    DATA: BEGIN OF gs_response,
+            statuscode TYPE i VALUE 200,
+            reason     TYPE string VALUE 'OK',
+          END OF gs_response,
+          gv_query_string TYPE tihttpnvp,
+          io_server       TYPE REF TO if_http_server.
+    METHODS create_data ABSTRACT
+      IMPORTING
+        iv_action TYPE string
+      RAISING
+        zcx_bd_not_found .
+
+  PRIVATE SECTION.
+    DATA: gv_json        TYPE string.
+ENDCLASS.
+
+
+
+CLASS ZCL_BD_JSON_HTTP_HANDLER IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BD_JSON_HTTP_HANDLER->GET
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_KEY                         TYPE        STRING
+* | [--->] IV_REQUIRED                    TYPE        ABAP_BOOL (default =ABAP_FALSE)
+* | [--->] IV_REQUIRED_MESSAGE            TYPE        STRING (default ='')
+* | [<-()] R                              TYPE        STRING
+* | [!CX!] ZCX_BD_NOT_FOUND
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get.
+    r  = me->io_server->request->get_form_field( iv_key ).
+    IF r IS INITIAL AND iv_required = abap_true.
+      IF iv_required_message IS NOT INITIAL.
+        RAISE EXCEPTION TYPE zcx_bd_not_found EXPORTING message = iv_required_message.
+      ELSE.
+        RAISE EXCEPTION TYPE zcx_bd_not_found EXPORTING textid = zcx_bd_not_found=>not_found form_field = iv_key.
+      ENDIF.
+
+    ENDIF.
+    " FIELD-SYMBOLS: <ls_query> TYPE ihttpnvp.
+    "only collect the form fields the very first time
+    "IF gv_query_string IS INITIAL.
+    "  me->io_server->request->get_form_fields( CHANGING fields = me->gv_query_string ).
+    "ENDIF.
+
+    "    READ TABLE me->gv_query_string ASSIGNING <ls_query> WITH TABLE KEY name = iv_key.
+
+    "   IF <ls_query> IS ASSIGNED AND sy-subrc = 0.
+    "    r = <ls_query>-value.
+    " ENDIF.
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BD_JSON_HTTP_HANDLER->GET_ACTION
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] R                              TYPE        STRING
+* | [!CX!] ZCX_BD_NOT_FOUND
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_action.
+    r = me->get( iv_key = 'action' iv_required = abap_true ).
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BD_JSON_HTTP_HANDLER->GET_CLIENT
+* +-------------------------------------------------------------------------------------------------+
+* | [<-()] R                              TYPE        I
+* | [!CX!] ZCX_BD_NOT_FOUND
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD get_client.
+    r = me->get( iv_key = 'sap-client' ).
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BD_JSON_HTTP_HANDLER->IF_HTTP_EXTENSION~HANDLE_REQUEST
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] SERVER                         TYPE REF TO IF_HTTP_SERVER
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD if_http_extension~handle_request.
+    DATA: lo_ref TYPE REF TO cx_root, text TYPE string.
+
+    "set the global value for refences in other methods
+    me->io_server = server.
+
+    "call abstract method where the method set_data must be called to create the json data
+    TRY.
+        me->create_data( iv_action = me->get_action( ) ).
+      CATCH zcx_bd_not_found INTO lo_ref.
+        me->set_error( lo_ref->get_text( ) ).
+    ENDTRY.
+    "Output the repsonse
+    me->respond( ).
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BD_JSON_HTTP_HANDLER->RESPOND
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD respond.
+
+    me->io_server->response->set_header_field(
+      EXPORTING  name = 'Access-Control-Allow-Origin'
+          value = '*'
+    ).
+    me->io_server->response->set_status( code = me->gs_response-statuscode reason = me->gs_response-reason ).
+    IF me->gv_json IS NOT INITIAL.
+      me->io_server->response->set_content_type( content_type = 'application/json' ).
+      DATA: lv_jsonp TYPE string.
+      lv_jsonp =  me->io_server->request->get_form_field( 'callback' ).
+      IF lv_jsonp IS NOT INITIAL.
+          me->io_server->response->set_cdata( data = lv_jsonp && '(' && me->gv_json && ')' ).
+      ELSE.
+          me->io_server->response->set_cdata( data = me->gv_json ).
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BD_JSON_HTTP_HANDLER->SET_DATA
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_STRUCT                      TYPE        ANY
+* | [--->] IV_SUCCESS                     TYPE        ABAP_BOOL (default =ABAP_TRUE)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_data.
+
+    DATA: BEGIN OF lv_setdata,
+            success TYPE abap_bool VALUE abap_true,
+            error   TYPE abap_bool VALUE abap_false,
+          END OF lv_setdata.
+
+    IF iv_success <> abap_true.
+      lv_setdata-success = abap_false.
+      lv_setdata-error = abap_true.
+    ENDIF.
+
+    IF iv_struct IS NOT INITIAL.
+      "Serialiaze Json Data
+      DATA gv_json_serializer TYPE REF TO zui5_json_serializer.
+      CREATE OBJECT gv_json_serializer
+        EXPORTING
+          data = iv_struct.
+      gv_json_serializer->serialize( ).
+      me->gv_json = gv_json_serializer->get_data( ).
+    ENDIF.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Instance Public Method ZCL_BD_JSON_HTTP_HANDLER->SET_ERROR
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_MESSAGE                     TYPE        STRING
+* | [--->] IV_CODE                        TYPE        I (default =404)
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD set_error.
+    DATA: BEGIN OF ls_error,
+            error_message TYPE string VALUE '',
+          END OF ls_error.
+
+    IF iv_message IS NOT INITIAL.
+      me->gs_response-statuscode  = iv_code.
+      me->gs_response-reason      = iv_message.
+      ls_error-error_message = iv_message.
+    ENDIF.
+    me->set_data( iv_struct = ls_error iv_success = abap_false ).
+
+  ENDMETHOD.
+ENDCLASS.
